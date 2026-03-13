@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   description:
     "Compare your resume with job descriptions and discover missing skills instantly.",
   icons: {
-    icon: "/headhunting.png",
+    icon: "/favicon.ico",
   },
 };
 

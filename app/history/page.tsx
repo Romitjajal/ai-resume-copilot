@@ -235,7 +235,7 @@ export default function HistoryPage() {
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <Image
-                src="/microchip.png"
+                src="/headhunting.png"
                 alt="AI CV Score"
                 width={36}
                 height={36}

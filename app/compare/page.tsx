@@ -290,7 +290,7 @@ export default function ComparePage() {
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <Image
-                src="/microchip.png"
+                src="/headhunting.png"
                 alt="AI CV Score"
                 width={34}
                 height={34}
