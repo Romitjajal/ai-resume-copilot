@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String       @id @default(cuid())
+  name      String
+  email     String       @unique
+  password  String
+  createdAt DateTime     @default(now())
+  scans     ResumeScan[]
+}
+
+model ResumeScan {
+  id               String   @id @default(cuid())
+  userId           String
+  fileName         String
+  resumeText       String   @db.Text
+  jobDescription   String   @db.Text
+  score            Int
+
+  summaryScore     Int?
+  skillsScore      Int?
+  experienceScore  Int?
+  projectsScore    Int?
+  educationScore   Int?
+
+  detectedRole     String?
+
+  matchedKeywords  String[]
+  missingKeywords  String[]
+  suggestions      String[]
+  createdAt        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
