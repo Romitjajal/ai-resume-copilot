@@ -41,13 +41,11 @@ Deployment
 ## Screenshots
 
 ### Resume Analyzer
-![Resume Analyzer](public/screenshots/home.png)
+![Resume Analyzer](public/Screenshots/analysis.png)
 
-### Analysis Result
-![Analysis Result](public/screenshots/analysis.png)
 
 ### Resume History
-![Resume History](public/screenshots/history.png)
+![Resume History](public/Screenshots/history.png)
 
 ### Compare Scores
 ![Compare Scores](public/screenshots/compare.png)
