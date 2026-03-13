@@ -48,7 +48,7 @@ Deployment
 ![Resume History](public/Screenshots/history.png)
 
 ### Compare Scores
-![Compare Scores](public/screenshots/compare.png)
+![Compare Scores](public/Screenshots/compare.png)
 
 ## Run Locally
 
