@@ -16,16 +16,7 @@ const SKILL_GROUPS = {
 export async function POST(req: Request) {
   try {
     const token = getTokenFromRequest(req);
-
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const payload = verifyToken(token);
-
-    if (!payload) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
+    const payload = token ? verifyToken(token) : null;
 
     const formData = await req.formData();
 
@@ -129,12 +120,16 @@ export async function POST(req: Request) {
       detectedRole
     );
 
-    const savedScan = await prisma.resumeScan.create({
+  let savedScan = null;
+
+if (payload) {
+  try {
+    savedScan = await prisma.resumeScan.create({
       data: {
         userId: payload.userId,
         fileName: file.name,
         resumeText,
-        jobDescription,
+        jobDescription: String(jobDescription),
         score,
         summaryScore: sectionScores.summary,
         skillsScore: sectionScores.skills,
@@ -147,9 +142,14 @@ export async function POST(req: Request) {
         suggestions,
       },
     });
+  } catch (dbError) {
+    console.error("History save failed:", dbError);
+  }
+}
 
     return NextResponse.json({
-      id: savedScan.id,
+      id: savedScan?.id,
+      savedToHistory: Boolean(savedScan),
       score,
       sectionScores,
       detectedRole,
@@ -157,7 +157,9 @@ export async function POST(req: Request) {
       missingKeywords: Array.from(missingKeywords),
       suggestions,
       resumeText,
-      message: "Resume analyzed successfully",
+      message: savedScan
+        ? "Resume analyzed and saved successfully"
+        : "Resume analyzed successfully",
     });
   } catch (error) {
     console.error(error);
@@ -329,7 +331,6 @@ function extractRelevantKeywords(normalizedJD: string) {
 }
 
 function detectRole(text: string) {
-
   if (
     text.includes("it support") ||
     text.includes("technical support") ||
@@ -366,9 +367,11 @@ function detectRole(text: string) {
 
   return "Software Developer";
 }
+
 function countMatches(text: string, keywords: string[]) {
   return keywords.filter((keyword) => text.includes(keyword)).length;
 }
+
 function buildSuggestions(
   missingKeywords: string[],
   sectionScores: {

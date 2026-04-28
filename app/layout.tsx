@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -13,11 +14,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Resume Match Analyzer",
+  title: "AI Resume Copilot",
   description:
     "Compare your resume with job descriptions and discover missing skills instantly.",
   icons: {
-    icon: "/favicon.ico",
+    icon: "/rj.png",
   },
 };
 
@@ -48,7 +49,7 @@ export default function RootLayout({
             borderTop: "1px solid #23262d",
           }}
         >
-          © {new Date().getFullYear()} Resume Match Analyzer • Built by Romit Jajal
+          © {new Date().getFullYear()} Ai Resume Copilot • Built by Romit Jajal
         </footer>
       </body>
     </html>

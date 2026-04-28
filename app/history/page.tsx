@@ -44,7 +44,7 @@ export default function HistoryPage() {
 
   const [openSections, setOpenSections] = useState({
     jobDescription: false,
-    resumePreview: true,
+    resumePreview: false,
   });
 
   useEffect(() => {
@@ -85,6 +85,8 @@ export default function HistoryPage() {
           Authorization: `Bearer ${token}`,
         },
       });
+
+    
 
       const data = await res.json();
 
@@ -140,7 +142,7 @@ export default function HistoryPage() {
         dangerBorder: "#fecaca",
         dangerText: "#b91c1c",
         activeBg: "#f1f5f9",
-        selectedBorder: "#3b82f6",
+        selectedBorder: "#6366f1",
       };
     }
 
@@ -161,7 +163,7 @@ export default function HistoryPage() {
       dangerBorder: "#7f1d1d",
       dangerText: "#fca5a5",
       activeBg: "#1a1c20",
-      selectedBorder: "#2563eb",
+      selectedBorder: "#6366f1",
     };
   }, [theme]);
 
@@ -190,6 +192,15 @@ export default function HistoryPage() {
       selectedScan.educationScore,
     ].some((value) => typeof value === "number");
 
+  const [isMobile, setIsMobile] = useState(false);
+
+      useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth < 768);
+        checkMobile();
+        window.addEventListener("resize", checkMobile);
+        return () => window.removeEventListener("resize", checkMobile);
+      }, []);
+      
   if (!mounted || loading) {
     return (
       <main
@@ -202,7 +213,7 @@ export default function HistoryPage() {
           fontSize: "14px",
         }}
       >
-        Loading history...
+        Loading optimization history...
       </main>
     );
   }
@@ -218,7 +229,7 @@ export default function HistoryPage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "214px 1fr",
+          gridTemplateColumns: isMobile ? "1fr" : "214px 1fr",
           minHeight: "100vh",
         }}
       >
@@ -234,17 +245,22 @@ export default function HistoryPage() {
         >
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <Image
-                src="/headhunting.png"
-                alt="AI CV Score"
-                width={36}
-                height={36}
-                style={{
-                  objectFit: "contain",
-                  filter: theme === "dark" ? "invert(1)" : "none",
-                }}
-              />
-
+                <div
+    style={{
+      width: "36px",
+      height: "36px",
+      borderRadius: "10px",
+      background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontWeight: 700,
+      color: "#fff",
+      fontSize: "16px",
+    }}
+  >
+    ✦
+  </div>
               <div>
                 <div
                   style={{
@@ -254,10 +270,10 @@ export default function HistoryPage() {
                     letterSpacing: "-0.02em",
                   }}
                 >
-                  Resume Match Analyzer
+                  AI Resume Copilot
                 </div>
                 <div style={{ fontSize: "11px", color: colors.muted }}>
-                  Resume Analyzer
+                  ATS Resume Builder
                 </div>
               </div>
             </div>
@@ -319,9 +335,8 @@ export default function HistoryPage() {
               gap: "4px",
             }}
           >
-            <SidebarLink label="Resume Analyzer" active={false} href="/" colors={colors} />
+            <SidebarLink label="Resume Optimizer" active={false} href="/tool" colors={colors} />
             <SidebarLink label="History" active href="/history" colors={colors} />
-            <SidebarLink label="Compare Scores" active={false} href="/compare" colors={colors} />
           </nav>
 
           <div
@@ -350,14 +365,14 @@ export default function HistoryPage() {
           <div style={{ maxWidth: "1120px" }}>
             <h1
               style={{
-                fontSize: "30px",
-                fontWeight: 700,
-                letterSpacing: "-0.03em",
+                fontSize: "32px",
+                fontWeight: 800,
+                letterSpacing: "-0.04em",
                 marginBottom: "8px",
                 lineHeight: 1.1,
               }}
             >
-              Resume History
+              Optimization History
             </h1>
 
             <p
@@ -368,7 +383,7 @@ export default function HistoryPage() {
                 lineHeight: 1.6,
               }}
             >
-              Review previous resume analyses without opening every detail at once.
+              Review your previous resume optimizations, match scores, and keyword insights.
             </p>
 
             {error && (
@@ -395,7 +410,7 @@ export default function HistoryPage() {
                 marginBottom: "16px",
               }}
             >
-              <StatCard title="Total Scans" value={String(scans.length)} colors={colors} />
+              <StatCard title="Total Optimizations" value={String(scans.length)} colors={colors} />
               <StatCard title="Highest Score" value={`${highestScore}`} colors={colors} />
               <StatCard title="Latest Score" value={`${latestScore}`} colors={colors} />
               <StatCard title="Average Score" value={`${averageScore}`} colors={colors} />
@@ -422,15 +437,17 @@ export default function HistoryPage() {
                 <h3
                   style={{
                     fontSize: "16px",
-                    fontWeight: 600,
+                    fontWeight: 700,
                     marginBottom: "12px",
                   }}
                 >
-                  Saved Scans
+                  Saved Optimizations
                 </h3>
 
                 {scans.length === 0 ? (
-                  <p style={{ color: colors.muted, fontSize: "13px" }}>No scans found yet.</p>
+                  <p style={{ color: colors.muted, fontSize: "13px", lineHeight: 1.6 }}>
+                    No optimizations yet. Start by generating your first AI resume.
+                  </p>
                 ) : (
                   <div style={{ display: "grid", gap: "10px" }}>
                     {scans.map((scan) => {
@@ -440,6 +457,12 @@ export default function HistoryPage() {
                         <button
                           key={scan.id}
                           onClick={() => setSelectedScan(scan)}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = "translateY(-2px)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "translateY(0)";
+                          }}
                           style={{
                             textAlign: "left",
                             background: isActive ? colors.activeBg : "transparent",
@@ -450,11 +473,12 @@ export default function HistoryPage() {
                             padding: "12px",
                             cursor: "pointer",
                             color: colors.text,
+                            transition: "all 0.2s ease",
                           }}
                         >
                           <div
                             style={{
-                              fontWeight: 600,
+                              fontWeight: 700,
                               fontSize: "14px",
                               marginBottom: "4px",
                               lineHeight: 1.4,
@@ -479,9 +503,15 @@ export default function HistoryPage() {
                           <div
                             style={{
                               fontSize: "16px",
-                              fontWeight: 700,
+                              fontWeight: 800,
                               lineHeight: 1.1,
                               marginBottom: scan.detectedRole ? "6px" : 0,
+                              color:
+                                scan.score >= 80
+                                  ? "#22c55e"
+                                  : scan.score >= 60
+                                  ? "#f59e0b"
+                                  : "#ef4444",
                             }}
                           >
                             {scan.score}
@@ -525,15 +555,15 @@ export default function HistoryPage() {
               >
                 {!selectedScan ? (
                   <p style={{ color: colors.muted, fontSize: "13px" }}>
-                    Select a scan to view details.
+                    Select an optimization to view details.
                   </p>
                 ) : (
                   <>
-                    <div style={{ marginBottom: "14px" }}>
+                    <div style={{ marginBottom: "16px" }}>
                       <h3
                         style={{
                           fontSize: "18px",
-                          fontWeight: 600,
+                          fontWeight: 700,
                           lineHeight: 1.35,
                           marginBottom: "6px",
                           wordBreak: "break-word",
@@ -551,6 +581,48 @@ export default function HistoryPage() {
                       >
                         {new Date(selectedScan.createdAt).toLocaleString()}
                       </p>
+
+                      <div style={{ display: "flex", gap: "10px", marginTop: "12px" }}>
+                        <button
+                          onClick={() =>
+                            setOpenSections((prev) => ({
+                              ...prev,
+                              resumePreview: true,
+                            }))
+                          }
+                          style={{
+                            padding: "10px 14px",
+                            borderRadius: "10px",
+                            border: "none",
+                            background: "#6366f1",
+                            color: "#ffffff",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            fontSize: "13px",
+                          }}
+                        >
+                          View Resume
+                        </button>
+
+                        <Link
+                          href="/"
+                          style={{
+                            padding: "10px 14px",
+                            borderRadius: "10px",
+                            border: `1px solid ${colors.border}`,
+                            background: "transparent",
+                            color: colors.text,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            textDecoration: "none",
+                            display: "inline-flex",
+                            alignItems: "center",
+                          }}
+                        >
+                          Re-analyze
+                        </Link>
+                      </div>
                     </div>
 
                     <div
@@ -561,11 +633,7 @@ export default function HistoryPage() {
                         marginBottom: "12px",
                       }}
                     >
-                      <StatCard
-                        title="Score"
-                        value={`${selectedScan.score}/100`}
-                        colors={colors}
-                      />
+                      <StatCard title="Score" value={`${selectedScan.score}/100`} colors={colors} />
                       <StatCard
                         title="Matched"
                         value={String(selectedScan.matchedKeywords.length)}
@@ -633,7 +701,7 @@ export default function HistoryPage() {
                             fontWeight: 500,
                           }}
                         >
-                          Detected Role
+                          Best Match Role
                         </div>
                         <div
                           style={{
