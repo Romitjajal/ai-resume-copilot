@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getTokenFromRequest, verifyToken } from "@/lib/auth";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const SKILL_GROUPS = {
   frontend: ["react", "next.js", "javascript", "typescript", "html", "css", "tailwind"],
@@ -45,8 +46,20 @@ export async function POST(req: Request) {
       );
     }
 
-    const normalizedResume = normalizeText(resumeText);
-    const normalizedJD = normalizeText(jobDescription);
+   const MAX_LENGTH = 12000;
+
+const trimmedResumeText =
+  resumeText.length > MAX_LENGTH
+    ? resumeText.slice(0, MAX_LENGTH)
+    : resumeText;
+
+const trimmedJobDescription =
+  jobDescription.length > MAX_LENGTH
+    ? jobDescription.slice(0, MAX_LENGTH)
+    : jobDescription;
+
+const normalizedResume = normalizeText(trimmedResumeText);
+const normalizedJD = normalizeText(trimmedJobDescription);
 
     const matchedKeywords = new Set<string>();
     const missingKeywords = new Set<string>();
@@ -128,8 +141,8 @@ if (payload) {
       data: {
         userId: payload.userId,
         fileName: file.name,
-        resumeText,
-        jobDescription: String(jobDescription),
+        resumeText: trimmedResumeText,
+        jobDescription: trimmedJobDescription,
         score,
         summaryScore: sectionScores.summary,
         skillsScore: sectionScores.skills,

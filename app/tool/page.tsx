@@ -157,6 +157,10 @@ export default function Home() {
       return;
     }
 
+    if (file.size > 5 * 1024 * 1024) {
+  setError("Please upload a DOCX file under 5MB.");
+  return;
+}
     if (!jobDescription.trim()) {
       setError("Please enter a job description.");
       return;
@@ -214,7 +218,12 @@ export default function Home() {
       setAiData(tailorData);
       setShowPreview(true);
     } catch (err: any) {
-      setError(err.message || "Something went wrong");
+      console.error("Resume processing error:", err);
+     setError(
+  err.message === "Failed to fetch"
+    ? "Something went wrong. Please try again. If the issue continues, check your internet connection or try a smaller DOCX file."
+    : err.message || "Something went wrong"
+);
     } finally {
       setLoading(false);
       setAiLoading(false);

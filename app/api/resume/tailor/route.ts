@@ -33,6 +33,18 @@ export async function POST(req: Request) {
   
     const { resumeText, jobDescription } = await req.json();
 
+    const MAX_LENGTH = 12000;
+
+      const trimmedResume =
+        resumeText.length > MAX_LENGTH
+          ? resumeText.slice(0, MAX_LENGTH)
+          : resumeText;
+
+      const trimmedJD =
+        jobDescription.length > MAX_LENGTH
+          ? jobDescription.slice(0, MAX_LENGTH)
+          : jobDescription;
+
     if (!resumeText || !jobDescription) {
       return NextResponse.json(
         { error: "Resume text and job description are required" },
@@ -133,10 +145,10 @@ OUTPUT FORMAT:
 }
 Return valid JSON only. Do not include markdown, comments, or explanation.
 Resume:
-${resumeText}
+${trimmedResume}
 
 Job Description:
-${jobDescription}
+${trimmedJD}
 `;
    const response = await client.responses.create({
   model: "gpt-4.1",
