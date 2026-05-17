@@ -49,6 +49,7 @@ export default function Home() {
   const [result, setResult] = useState<AnalyzeResult | null>(null);
   const [aiData, setAiData] = useState<AiTailorResult | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [showComparison, setShowComparison] = useState(false);
   const [error, setError] = useState("");
   const [user, setUser] = useState<StoredUser | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -69,7 +70,6 @@ export default function Home() {
       setTheme(savedTheme);
     }
 
-    const token = localStorage.getItem("token");
     const storedUser = localStorage.getItem("user");
 
     if (storedUser) {
@@ -86,6 +86,236 @@ export default function Home() {
   useEffect(() => {
     localStorage.setItem("theme", theme);
   }, [theme]);
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    router.replace("/");
+  };
+
+  const handleToggleTheme = () => {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  };
+
+  const handleAnalyzeAndImprove = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setResult(null);
+    setAiData(null);
+    setShowPreview(false);
+
+    if (!file) {
+      setError("Please upload a DOCX resume.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Please upload a DOCX file under 5MB.");
+      return;
+    }
+
+    if (!jobDescription.trim()) {
+      setError("Please enter a job description.");
+      return;
+    }
+
+    const token = localStorage.getItem("token");
+
+    const formData = new FormData();
+    formData.append("resume", file);
+    formData.append("jobDescription", jobDescription);
+
+    try {
+      setLoading(true);
+
+      const analyzeRes = await fetch("/api/resume/analyze", {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+
+      const analyzeData = await analyzeRes.json();
+
+      if (!analyzeRes.ok) {
+        throw new Error(analyzeData.error || "Failed to analyze resume");
+      }
+
+      setResult(analyzeData);
+      setLoading(false);
+      setAiLoading(true);
+
+      const tailorRes = await fetch("/api/resume/tailor", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          resumeText: analyzeData.resumeText,
+          jobDescription,
+        }),
+      });
+
+      const tailorText = await tailorRes.text();
+
+      let tailorData: AiTailorResult;
+
+      try {
+        tailorData = JSON.parse(tailorText);
+      } catch {
+        throw new Error("AI response could not be parsed.");
+      }
+
+      if (!tailorRes.ok) {
+        throw new Error((tailorData as any).error || "Failed to improve resume with AI");
+      }
+
+      setAiData(tailorData);
+      setShowPreview(true);
+    } catch (err: any) {
+      console.error("Resume processing error:", err);
+      setError(
+        err.message === "Failed to fetch"
+          ? "Something went wrong. Please try again. If the issue continues, check your internet connection or try a smaller DOCX file."
+          : err.message || "Something went wrong"
+      );
+    } finally {
+      setLoading(false);
+      setAiLoading(false);
+    }
+  };
+
+  const handleDownloadResume = async () => {
+    if (!aiData) return;
+
+    const { Document, Packer, Paragraph, TextRun, AlignmentType, BorderStyle } =
+      await import("docx");
+    const { saveAs } = await import("file-saver");
+
+    const lines =
+      aiData.finalResumeText
+        ?.split("\n")
+        .map((line: string) => line.trim())
+        .filter(Boolean) || [];
+
+    const children = lines.map((line: string, index: number) => {
+      const isFirstLine = index === 0;
+      const isContactLine = index === 1 && (line.includes("@") || line.includes("|"));
+
+      const isHeading =
+        line === line.toUpperCase() &&
+        line.length < 45 &&
+        !line.includes("@") &&
+        !line.includes("|") &&
+        !isFirstLine;
+
+      const isBullet =
+        line.startsWith("•") ||
+        line.startsWith("-") ||
+        line.startsWith("*") ||
+        /^\d+\./.test(line);
+
+      if (isFirstLine) {
+        return new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 80 },
+          children: [new TextRun({ text: line.toUpperCase(), bold: true, size: 34 })],
+        });
+      }
+
+      if (isContactLine) {
+        return new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 220 },
+          children: [new TextRun({ text: line, size: 20 })],
+        });
+      }
+
+      if (isHeading) {
+        return new Paragraph({
+          spacing: { before: 180, after: 80 },
+          border: {
+            bottom: { color: "999999", space: 1, style: BorderStyle.SINGLE, size: 4 },
+          },
+          children: [new TextRun({ text: line, bold: true, size: 24 })],
+        });
+      }
+
+      if (isBullet) {
+        return new Paragraph({
+          bullet: { level: 0 },
+          spacing: { after: 70 },
+          indent: { left: 360 },
+          children: [
+            new TextRun({
+              text: line.replace(/^(\d+\.|[-•*])\s*/, ""),
+              size: 21,
+            }),
+          ],
+        });
+      }
+
+      return new Paragraph({
+        spacing: { after: 90 },
+        children: [new TextRun({ text: line, size: 21 })],
+      });
+    });
+
+    const doc = new Document({
+      sections: [
+        {
+          properties: {
+            page: {
+              margin: {
+                top: 720,
+                right: 720,
+                bottom: 720,
+                left: 720,
+              },
+            },
+          },
+          children,
+        },
+      ],
+    });
+
+    const blob = await Packer.toBlob(doc);
+    saveAs(blob, "ATS_Tailored_Resume.docx");
+  };
+
+  const handleDownloadPDF = async () => {
+    const html2pdf = (await import("html2pdf.js")).default;
+    const element = document.getElementById("resume-pdf-template");
+
+    if (!element) return;
+
+    html2pdf()
+      .set({
+        margin: 0.4,
+        filename: "AI_Tailored_Resume.pdf",
+        image: { type: "jpeg", quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
+      })
+      .from(element)
+      .save();
+  };
+
+  const scoreColor =
+    result && result.score >= 80
+      ? "#22c55e"
+      : result && result.score >= 60
+      ? "#f59e0b"
+      : "#ef4444";
+
+  const initials = user?.name
+    ? user.name
+        .split(" ")
+        .map((p) => p[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
+    : "U";
 
   const colors = useMemo(() => {
     if (theme === "light") {
@@ -135,227 +365,6 @@ export default function Home() {
     };
   }, [theme]);
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    router.replace("/");
-  };
-
-  const handleToggleTheme = () => {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
-  };
-
-  const handleAnalyzeAndImprove = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setResult(null);
-    setAiData(null);
-    setShowPreview(false);
-
-    if (!file) {
-      setError("Please upload a DOCX resume.");
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-  setError("Please upload a DOCX file under 5MB.");
-  return;
-}
-    if (!jobDescription.trim()) {
-      setError("Please enter a job description.");
-      return;
-    }
-
-    const token = localStorage.getItem("token");
-
-    const formData = new FormData();
-    formData.append("resume", file);
-    formData.append("jobDescription", jobDescription);
-
-    try {
-      setLoading(true);
-
-      const analyzeRes = await fetch("/api/resume/analyze", {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData,
-      });
-
-      const analyzeData = await analyzeRes.json();
-
-      if (!analyzeRes.ok) {
-        throw new Error(analyzeData.error || "Failed to analyze resume");
-      }
-
-      setResult(analyzeData);
-      setLoading(false);
-      setAiLoading(true);
-
-      const tailorRes = await fetch("/api/resume/tailor", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          resumeText: analyzeData.resumeText,
-          jobDescription,
-        }),
-      });
-      const tailorText = await tailorRes.text();
-
-      let tailorData: AiTailorResult;
-      try {
-        tailorData = JSON.parse(tailorText);
-      } catch {
-        throw new Error("AI response could not be parsed.");
-      }
-
-      if (!tailorRes.ok) {
-        throw new Error((tailorData as any).error || "Failed to improve resume with AI");
-      }
-
-      setAiData(tailorData);
-      setShowPreview(true);
-    } catch (err: any) {
-      console.error("Resume processing error:", err);
-     setError(
-  err.message === "Failed to fetch"
-    ? "Something went wrong. Please try again. If the issue continues, check your internet connection or try a smaller DOCX file."
-    : err.message || "Something went wrong"
-);
-    } finally {
-      setLoading(false);
-      setAiLoading(false);
-    }
-  };
-
-  const handleDownloadResume = async () => {
-    if (!aiData) return;
-
-    const {
-      Document,
-      Packer,
-      Paragraph,
-      TextRun,
-      AlignmentType,
-      BorderStyle,
-    } = await import("docx");
-    const { saveAs } = await import("file-saver");
-
-    const lines =
-      aiData.finalResumeText
-        ?.split("\n")
-        .map((line: string) => line.trim())
-        .filter(Boolean) || [];
-
-    const children = lines.map((line: string, index: number) => {
-      const isFirstLine = index === 0;
-      const isContactLine = index === 1 && (line.includes("@") || line.includes("|"));
-
-      const isHeading =
-        line === line.toUpperCase() &&
-        line.length < 45 &&
-        !line.includes("@") &&
-        !line.includes("|") &&
-        !isFirstLine;
-
-      const isBullet =
-        line.startsWith("•") ||
-        line.startsWith("-") ||
-        line.startsWith("*") ||
-        /^\d+\./.test(line);
-
-      if (isFirstLine) {
-        return new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { after: 80 },
-          children: [
-            new TextRun({ text: line.toUpperCase(), bold: true, size: 34 }),
-          ],
-        });
-      }
-
-      if (isContactLine) {
-        return new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { after: 220 },
-          children: [new TextRun({ text: line, size: 20 })],
-        });
-      }
-
-      if (isHeading) {
-        return new Paragraph({
-          spacing: { before: 180, after: 80 },
-          border: {
-            bottom: { color: "999999", space: 1, style: BorderStyle.SINGLE, size: 4 },
-          },
-          children: [new TextRun({ text: line, bold: true, size: 24 })],
-        });
-      }
-
-      if (isBullet) {
-        return new Paragraph({
-          bullet: { level: 0 },
-          spacing: { after: 70 },
-          indent: { left: 360 },
-          children: [
-            new TextRun({
-              text: line.replace(/^(\d+\.|[-•*])\s*/, ""),
-              size: 21,
-            }),
-          ],
-        });
-      }
-
-      return new Paragraph({
-        spacing: { after: 90 },
-        children: [new TextRun({ text: line, size: 21 })],
-      });
-    });
-const handleDownloadPDF = async () => {
-  const html2pdf = (await import("html2pdf.js")).default;
-  const element = document.getElementById("resume-pdf-template");
-
-  if (!element) return;
-
-  html2pdf()
-    .set({
-      margin: 0.4,
-      filename: "AI_Tailored_Resume.pdf",
-      image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2 },
-      jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
-    })
-    .from(element)
-    .save();
-};
-    const doc = new Document({
-      sections: [
-        {
-          properties: {
-            page: { margin: { top: 720, right: 720, bottom: 720, left: 720 } },
-          },
-          children,
-        },
-      ],
-    });
-
-    const blob = await Packer.toBlob(doc);
-    saveAs(blob, "ATS_Tailored_Resume.docx");
-  };
-
-  const scoreColor =
-    result && result.score >= 80
-      ? "#22c55e"
-      : result && result.score >= 60
-      ? "#f59e0b"
-      : "#ef4444";
-
-  const initials = user?.name
-    ? user.name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()
-    : "U";
-
   if (checkingAuth) {
     return (
       <main
@@ -382,7 +391,6 @@ const handleDownloadPDF = async () => {
           minHeight: "100vh",
         }}
       >
-        {/* ── SIDEBAR / TOP NAV ── */}
         <aside
           style={{
             background: colors.sidebarBg,
@@ -399,14 +407,16 @@ const handleDownloadPDF = async () => {
             zIndex: 50,
           }}
         >
-          {/* Logo */}
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <Image
               src="/rj.png"
               alt="AI Resume Copilot"
               width={isMobile ? 30 : 36}
               height={isMobile ? 30 : 36}
-              style={{ borderRadius: "8px", boxShadow: "0 0 20px rgba(99,102,241,0.4)" }}
+              style={{
+                borderRadius: "8px",
+                boxShadow: "0 0 20px rgba(99,102,241,0.4)",
+              }}
             />
             <div>
               <div
@@ -427,74 +437,87 @@ const handleDownloadPDF = async () => {
             </div>
           </div>
 
-          {/* Mobile right-side actions */}
           {isMobile ? (
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <button
-                onClick={handleToggleTheme}
-                style={{
-                  width: "34px", height: "34px", borderRadius: "8px",
-                  border: `1px solid ${colors.border}`, background: colors.softBg,
-                  color: colors.text, cursor: "pointer", fontSize: "15px",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}
-              >
+              <button onClick={handleToggleTheme} style={mobileIconButton(colors)}>
                 {theme === "dark" ? "☀️" : "🌙"}
               </button>
               <button
                 onClick={() => setShowMobileMenu((v) => !v)}
-                style={{
-                  width: "34px", height: "34px", borderRadius: "8px",
-                  border: `1px solid ${colors.border}`, background: colors.softBg,
-                  color: colors.text, cursor: "pointer", fontSize: "18px",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}
+                style={mobileIconButton(colors)}
               >
                 {showMobileMenu ? "✕" : "☰"}
               </button>
             </div>
           ) : (
             <>
-              {/* Desktop user card */}
               <div
                 style={{
-                  background: colors.panelBg, border: `1px solid ${colors.border}`,
-                  borderRadius: "14px", padding: "14px",
+                  background: colors.panelBg,
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: "14px",
+                  padding: "14px",
                 }}
               >
                 <div
                   style={{
-                    width: "46px", height: "46px", borderRadius: "999px",
-                    display: "grid", placeItems: "center", background: colors.softBg,
-                    fontWeight: 700, fontSize: "16px", marginBottom: "10px",
+                    width: "46px",
+                    height: "46px",
+                    borderRadius: "999px",
+                    display: "grid",
+                    placeItems: "center",
+                    background: colors.softBg,
+                    fontWeight: 700,
+                    fontSize: "16px",
+                    marginBottom: "10px",
                   }}
                 >
                   {initials}
                 </div>
-                <div style={{ fontSize: "15px", fontWeight: 600, lineHeight: 1.3, marginBottom: "4px" }}>
+                <div
+                  style={{
+                    fontSize: "15px",
+                    fontWeight: 600,
+                    lineHeight: 1.3,
+                    marginBottom: "4px",
+                  }}
+                >
                   {user?.name || "Guest"}
                 </div>
-                <div style={{ color: colors.muted, fontSize: "12px", lineHeight: 1.45, wordBreak: "break-word" }}>
+                <div
+                  style={{
+                    color: colors.muted,
+                    fontSize: "12px",
+                    lineHeight: 1.45,
+                    wordBreak: "break-word",
+                  }}
+                >
                   {user?.email || "Not Signed In"}
                 </div>
               </div>
 
-              {/* Desktop nav */}
               <nav
                 style={{
-                  background: colors.panelBg, border: `1px solid ${colors.border}`,
-                  borderRadius: "14px", padding: "8px", display: "grid", gap: "4px",
+                  background: colors.panelBg,
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: "14px",
+                  padding: "8px",
+                  display: "grid",
+                  gap: "4px",
                 }}
               >
                 <SidebarLink label="Resume Optimizer" active href="/" colors={colors} />
                 <SidebarLink label="History" active={false} href="/history" colors={colors} />
               </nav>
 
-              {/* Desktop appearance */}
               <div
                 style={{
-                  background: colors.panelBg, border: `1px solid ${colors.border}`,
-                  borderRadius: "14px", padding: "12px", display: "grid", gap: "8px",
+                  background: colors.panelBg,
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: "14px",
+                  padding: "12px",
+                  display: "grid",
+                  gap: "8px",
                 }}
               >
                 <div style={{ fontWeight: 600, fontSize: "13px" }}>Appearance</div>
@@ -509,34 +532,50 @@ const handleDownloadPDF = async () => {
           )}
         </aside>
 
-        {/* Mobile dropdown menu */}
         {isMobile && showMobileMenu && (
           <div
             style={{
-              background: colors.sidebarBg, borderBottom: `1px solid ${colors.border}`,
-              padding: "12px 16px", display: "flex", flexDirection: "column", gap: "8px",
+              background: colors.sidebarBg,
+              borderBottom: `1px solid ${colors.border}`,
+              padding: "12px 16px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
             }}
           >
-            {/* User info */}
             <div
               style={{
-                display: "flex", alignItems: "center", gap: "10px",
-                padding: "10px 12px", background: colors.panelBg,
-                border: `1px solid ${colors.border}`, borderRadius: "12px",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                padding: "10px 12px",
+                background: colors.panelBg,
+                border: `1px solid ${colors.border}`,
+                borderRadius: "12px",
               }}
             >
               <div
                 style={{
-                  width: "36px", height: "36px", borderRadius: "999px",
-                  display: "grid", placeItems: "center", background: colors.softBg,
-                  fontWeight: 700, fontSize: "13px", flexShrink: 0,
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "999px",
+                  display: "grid",
+                  placeItems: "center",
+                  background: colors.softBg,
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  flexShrink: 0,
                 }}
               >
                 {initials}
               </div>
               <div>
-                <div style={{ fontSize: "14px", fontWeight: 600 }}>{user?.name || "Guest"}</div>
-                <div style={{ fontSize: "12px", color: colors.muted }}>{user?.email || "Not Signed In"}</div>
+                <div style={{ fontSize: "14px", fontWeight: 600 }}>
+                  {user?.name || "Guest"}
+                </div>
+                <div style={{ fontSize: "12px", color: colors.muted }}>
+                  {user?.email || "Not Signed In"}
+                </div>
               </div>
             </div>
 
@@ -544,29 +583,40 @@ const handleDownloadPDF = async () => {
               href="/"
               onClick={() => setShowMobileMenu(false)}
               style={{
-                padding: "10px 12px", borderRadius: "10px", textDecoration: "none",
-                background: colors.activeBg, fontWeight: 600, color: colors.text, fontSize: "14px",
+                padding: "10px 12px",
+                borderRadius: "10px",
+                textDecoration: "none",
+                background: colors.activeBg,
+                fontWeight: 600,
+                color: colors.text,
+                fontSize: "14px",
               }}
             >
               Resume Optimizer
             </Link>
+
             <Link
               href="/history"
               onClick={() => setShowMobileMenu(false)}
               style={{
-                padding: "10px 12px", borderRadius: "10px", textDecoration: "none",
-                background: "transparent", fontWeight: 500, color: colors.muted, fontSize: "14px",
+                padding: "10px 12px",
+                borderRadius: "10px",
+                textDecoration: "none",
+                background: "transparent",
+                fontWeight: 500,
+                color: colors.muted,
+                fontSize: "14px",
               }}
             >
               History
             </Link>
+
             <button onClick={handleLogout} style={{ ...secondaryButton(colors), width: "100%" }}>
               Logout
             </button>
           </div>
         )}
 
-        {/* ── MAIN CONTENT ── */}
         <section style={{ padding: isMobile ? "16px" : "24px 28px" }}>
           <div style={{ maxWidth: "980px" }}>
             <h1
@@ -581,44 +631,78 @@ const handleDownloadPDF = async () => {
               AI Resume Copilot
             </h1>
 
-            {/* Step indicator — hidden on mobile */}
             {!isMobile && (
-              <div style={{ display: "flex", alignItems: "center", gap: "20px", marginBottom: "20px" }}>
-                {["Upload Resume", "Paste Job Description", "Generate ATS Resume"].map((step, index) => (
-                  <div key={index} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <div
-                      style={{
-                        width: "28px", height: "28px", borderRadius: "50%",
-                        background: "#6366f1", color: "#fff", display: "flex",
-                        alignItems: "center", justifyContent: "center",
-                        fontSize: "13px", fontWeight: 700,
-                        boxShadow: "0 6px 18px rgba(99,102,241,0.4)",
-                      }}
-                    >
-                      {index + 1}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "20px",
+                  marginBottom: "20px",
+                }}
+              >
+                {["Upload Resume", "Paste Job Description", "Generate ATS Resume"].map(
+                  (step, index) => (
+                    <div key={index} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div
+                        style={{
+                          width: "28px",
+                          height: "28px",
+                          borderRadius: "50%",
+                          background: "#6366f1",
+                          color: "#fff",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: "13px",
+                          fontWeight: 700,
+                          boxShadow: "0 6px 18px rgba(99,102,241,0.4)",
+                        }}
+                      >
+                        {index + 1}
+                      </div>
+                      <span style={{ fontSize: "14px", color: "#cbd5f5", fontWeight: 500 }}>
+                        {step}
+                      </span>
+                      {index !== 2 && (
+                        <div
+                          style={{
+                            width: "40px",
+                            height: "2px",
+                            background: "#374151",
+                            marginLeft: "10px",
+                          }}
+                        />
+                      )}
                     </div>
-                    <span style={{ fontSize: "14px", color: "#cbd5f5", fontWeight: 500 }}>{step}</span>
-                    {index !== 2 && (
-                      <div style={{ width: "40px", height: "2px", background: "#374151", marginLeft: "10px" }} />
-                    )}
-                  </div>
-                ))}
+                  )
+                )}
               </div>
             )}
 
-            {/* Form */}
             <form
               onSubmit={handleAnalyzeAndImprove}
               style={{
-                display: "grid", gap: "16px", background: colors.panelBg,
-                border: `1px solid ${colors.border}`, borderRadius: "16px",
-                padding: isMobile ? "14px" : "18px", marginBottom: "16px",
+                display: "grid",
+                gap: "16px",
+                background: colors.panelBg,
+                border: `1px solid ${colors.border}`,
+                borderRadius: "16px",
+                padding: isMobile ? "14px" : "18px",
+                marginBottom: "16px",
               }}
             >
               <div>
-                <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: 600 }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "8px",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                  }}
+                >
                   Resume
                 </label>
+
                 <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
                   <input
                     id="resumeUpload"
@@ -627,38 +711,67 @@ const handleDownloadPDF = async () => {
                     onChange={(e) => setFile(e.target.files?.[0] || null)}
                     style={{ display: "none" }}
                   />
+
                   <label
                     htmlFor="resumeUpload"
                     style={{
-                      display: "inline-flex", alignItems: "center", justifyContent: "center",
-                      height: "38px", padding: "0 14px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      height: "38px",
+                      padding: "0 14px",
                       background: theme === "dark" ? "#191b1f" : "#f8fafc",
-                      border: `1px solid ${colors.border}`, borderRadius: "10px",
-                      cursor: "pointer", fontWeight: 600, fontSize: "13px",
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: "10px",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                      fontSize: "13px",
                     }}
                   >
                     Upload DOCX
                   </label>
-                  <span style={{ color: file ? colors.text : colors.muted, fontSize: "13px", lineHeight: 1.4 }}>
+
+                  <span
+                    style={{
+                      color: file ? colors.text : colors.muted,
+                      fontSize: "13px",
+                      lineHeight: 1.4,
+                    }}
+                  >
                     {file ? file.name : "Upload your resume to get started"}
                   </span>
                 </div>
               </div>
 
               <div>
-                <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: 600 }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "8px",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                  }}
+                >
                   Job Description
                 </label>
+
                 <textarea
                   rows={7}
                   value={jobDescription}
                   onChange={(e) => setJobDescription(e.target.value)}
                   placeholder="Paste the job description here..."
                   style={{
-                    width: "100%", padding: "12px 14px", borderRadius: "12px",
-                    border: `1px solid ${colors.border}`, background: colors.inputBg,
-                    color: colors.text, fontSize: "14px", lineHeight: 1.6,
-                    resize: "vertical", minHeight: "180px", outline: "none",
+                    width: "100%",
+                    padding: "12px 14px",
+                    borderRadius: "12px",
+                    border: `1px solid ${colors.border}`,
+                    background: colors.inputBg,
+                    color: colors.text,
+                    fontSize: "14px",
+                    lineHeight: 1.6,
+                    resize: "vertical",
+                    minHeight: "180px",
+                    outline: "none",
                     boxSizing: "border-box",
                   }}
                 />
@@ -669,35 +782,37 @@ const handleDownloadPDF = async () => {
                 disabled={loading || aiLoading}
                 style={{
                   width: isMobile ? "100%" : "260px",
-                  minHeight: "46px", borderRadius: "12px",
-                  transition: "all 0.2s ease", border: "none",
+                  minHeight: "46px",
+                  borderRadius: "12px",
+                  transition: "all 0.2s ease",
+                  border: "none",
                   background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
                   boxShadow: "0 10px 30px rgba(99,102,241,0.35)",
-                  color: "#ffffff", fontWeight: 700,
+                  color: "#ffffff",
+                  fontWeight: 700,
                   cursor: loading || aiLoading ? "not-allowed" : "pointer",
-                  fontSize: "14px", lineHeight: 1.3,
-                }}
-                onMouseEnter={(e) => {
-                  if (!loading && !aiLoading) {
-                    e.currentTarget.style.transform = "translateY(-2px)";
-                    e.currentTarget.style.boxShadow = "0 14px 40px rgba(99,102,241,0.45)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = "translateY(0)";
-                  e.currentTarget.style.boxShadow = "0 10px 30px rgba(99,102,241,0.35)";
+                  fontSize: "14px",
+                  lineHeight: 1.3,
                 }}
               >
-                {loading ? "Analyzing Resume..." : aiLoading ? "Improving with AI..." : "Analyze & Generate ATS Resume"}
+                {loading
+                  ? "Analyzing Resume..."
+                  : aiLoading
+                  ? "Improving with AI..."
+                  : "Analyze & Generate ATS Resume"}
               </button>
             </form>
 
             {error && (
               <div
                 style={{
-                  background: colors.dangerBg, border: `1px solid ${colors.dangerBorder}`,
-                  color: colors.dangerText, padding: "12px 14px", borderRadius: "12px",
-                  marginBottom: "16px", fontSize: "13px",
+                  background: colors.dangerBg,
+                  border: `1px solid ${colors.dangerBorder}`,
+                  color: colors.dangerText,
+                  padding: "12px 14px",
+                  borderRadius: "12px",
+                  marginBottom: "16px",
+                  fontSize: "13px",
                 }}
               >
                 {error}
@@ -706,17 +821,32 @@ const handleDownloadPDF = async () => {
 
             {result && (
               <>
-                {/* Top 3 stat cards */}
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: isMobile ? "repeat(2, minmax(0,1fr))" : "repeat(3, minmax(0,1fr))",
-                    gap: "12px", marginBottom: "14px",
+                    gridTemplateColumns: isMobile
+                      ? "repeat(2, minmax(0,1fr))"
+                      : "repeat(3, minmax(0,1fr))",
+                    gap: "12px",
+                    marginBottom: "14px",
                   }}
                 >
-                  <StatCard title="Overall Score" value={`${result.score}/100`} valueColor={scoreColor} colors={colors} />
-                  <StatCard title="Matched Skills" value={`${result.matchedKeywords?.length || 0}`} colors={colors} />
-                  <StatCard title="Missing Skills" value={`${result.missingKeywords?.length || 0}`} colors={colors} />
+                  <StatCard
+                    title="Overall Score"
+                    value={`${result.score}/100`}
+                    valueColor={scoreColor}
+                    colors={colors}
+                  />
+                  <StatCard
+                    title="Matched Keywords"
+                    value={`${result.matchedKeywords?.length || 0}`}
+                    colors={colors}
+                  />
+                  <StatCard
+                    title="Missing Keywords"
+                    value={`${result.missingKeywords?.length || 0}`}
+                    colors={colors}
+                  />
                 </div>
 
                 {result.sectionScores && (
@@ -724,8 +854,11 @@ const handleDownloadPDF = async () => {
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: isMobile ? "repeat(2, minmax(0,1fr))" : "repeat(5, minmax(0,1fr))",
-                        gap: "12px", marginBottom: "14px",
+                        gridTemplateColumns: isMobile
+                          ? "repeat(2, minmax(0,1fr))"
+                          : "repeat(5, minmax(0,1fr))",
+                        gap: "12px",
+                        marginBottom: "14px",
                       }}
                     >
                       <StatCard title="Summary" value={`${result.sectionScores.summary}`} colors={colors} />
@@ -737,16 +870,25 @@ const handleDownloadPDF = async () => {
 
                     <div
                       style={{
-                        background: colors.panelBg, border: `1px solid ${colors.border}`,
-                        borderRadius: "14px", padding: "15px", marginBottom: "14px",
+                        background: colors.panelBg,
+                        border: `1px solid ${colors.border}`,
+                        borderRadius: "14px",
+                        padding: "15px",
+                        marginBottom: "14px",
                       }}
                     >
-                      <div style={{ color: colors.muted, marginBottom: "8px", fontSize: "12px", fontWeight: 500 }}>
+                      <div
+                        style={{
+                          color: colors.muted,
+                          marginBottom: "8px",
+                          fontSize: "12px",
+                          fontWeight: 500,
+                        }}
+                      >
                         Detected Role
                       </div>
-                      <div style={{ fontSize: "18px", fontWeight: 700, color: colors.text, lineHeight: 1.2 }}>
-                        {result.detectedRole || "General Software Developer"}
-                      </div>
+
+                      <RoleBadge detectedRole={result.detectedRole} />
                     </div>
                   </>
                 )}
@@ -755,12 +897,28 @@ const handleDownloadPDF = async () => {
                   style={{
                     display: "grid",
                     gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0,1fr))",
-                    gap: "12px", marginBottom: "14px",
+                    gap: "12px",
+                    marginBottom: "14px",
                   }}
                 >
-                  <ResultCard title="Matched Keywords" items={result.matchedKeywords || []} color="#22c55e" colors={colors} />
-                  <ResultCard title="Missing Keywords" items={result.missingKeywords || []} color="#ef4444" colors={colors} />
-                  <ResultCard title="Suggestions" items={result.suggestions || []} color="#f59e0b" colors={colors} />
+                  <ResultCard
+                    title="Matched Keywords"
+                    items={result.matchedKeywords || []}
+                    color="#22c55e"
+                    colors={colors}
+                  />
+                  <ResultCard
+                    title="Missing Keywords"
+                    items={result.missingKeywords || []}
+                    color="#ef4444"
+                    colors={colors}
+                  />
+                  <ResultCard
+                    title="Suggestions"
+                    items={result.suggestions || []}
+                    color="#f59e0b"
+                    colors={colors}
+                  />
                 </div>
               </>
             )}
@@ -768,66 +926,115 @@ const handleDownloadPDF = async () => {
         </section>
       </div>
 
-      {/* ── MODAL ── */}
       {showPreview && aiData && (
         <div
           style={{
-            position: "fixed", inset: 0, width: "100%", height: "100%",
-            background: "rgba(0,0,0,0.65)", display: "flex", justifyContent: "center",
+            position: "fixed",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            background: "rgba(0,0,0,0.65)",
+            display: "flex",
+            justifyContent: "center",
             alignItems: isMobile ? "flex-end" : "center",
-            zIndex: 1000, padding: isMobile ? "0" : "20px",
+            zIndex: 1000,
+            padding: isMobile ? "0" : "20px",
           }}
         >
           <div
             style={{
               width: isMobile ? "100%" : "800px",
               maxHeight: isMobile ? "92vh" : "80vh",
-              overflowY: "auto", background: "#111827",
+              overflowY: "auto",
+              background: "#111827",
               borderRadius: isMobile ? "16px 16px 0 0" : "18px",
               padding: isMobile ? "16px" : "24px",
-              border: "1px solid #374151", boxShadow: "0 25px 80px rgba(0,0,0,0.6)",
+              border: "1px solid #374151",
+              boxShadow: "0 25px 80px rgba(0,0,0,0.6)",
             }}
           >
             <div
               style={{
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-                marginBottom: "18px", gap: "10px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "18px",
+                gap: "10px",
               }}
             >
-              <h3 style={{ margin: 0, fontSize: isMobile ? "16px" : "18px" }}>AI Resume Preview</h3>
+              <h3 style={{ margin: 0, fontSize: isMobile ? "16px" : "18px" }}>
+                AI Resume Preview
+              </h3>
+
               <div style={{ display: "flex", gap: "10px", alignItems: "center", flexShrink: 0 }}>
-                <button
-                  onClick={handleDownloadResume}
-                  style={{
-                    padding: isMobile ? "8px 12px" : "10px 16px", borderRadius: "10px",
-                    border: "none", background: "#6366f1", color: "#ffffff",
-                    fontWeight: 700, fontSize: isMobile ? "12px" : "13px",
-                    cursor: "pointer", boxShadow: "0 8px 20px rgba(99,102,241,0.35)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  Download ATS Resume
-                </button>
-                
-                <button
-                  onClick={() => setShowPreview(false)}
-                  style={{
-                    padding: "8px 10px", borderRadius: "10px",
-                    border: "1px solid #374151", background: "transparent",
-                    color: "#ffffff", cursor: "pointer", fontSize: "16px",
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
+  <button
+    onClick={handleDownloadResume}
+    style={{
+      padding: isMobile ? "8px 12px" : "10px 16px",
+      borderRadius: "10px",
+      border: "none",
+      background: "#6366f1",
+      color: "#ffffff",
+      fontWeight: 700,
+      fontSize: isMobile ? "12px" : "13px",
+      cursor: "pointer",
+      boxShadow: "0 8px 20px rgba(99,102,241,0.35)",
+      whiteSpace: "nowrap",
+    }}
+  >
+    Download ATS Resume
+  </button>
+
+  <button
+    onClick={() => setShowComparison(true)}
+    style={{
+      padding: isMobile ? "8px 12px" : "10px 16px",
+      borderRadius: "10px",
+      border: "1px solid #374151",
+      background: "transparent",
+      color: "#ffffff",
+      fontWeight: 700,
+      fontSize: isMobile ? "12px" : "13px",
+      cursor: "pointer",
+      whiteSpace: "nowrap",
+    }}
+  >
+    Compare
+  </button>
+
+  <button
+    onClick={() => setShowPreview(false)}
+    style={{
+      padding: "8px 10px",
+      borderRadius: "10px",
+      border: "1px solid #374151",
+      background: "transparent",
+      color: "#ffffff",
+      cursor: "pointer",
+      fontSize: "16px",
+    }}
+  >
+    ✕
+  </button>
+</div>
             </div>
 
             <div
+              id="resume-pdf-template"
               style={{
-                marginTop: "12px", background: "#0b1220", border: "1px solid #1f2937",
-                padding: isMobile ? "14px" : "22px", borderRadius: "14px",
-                maxHeight: "65vh", overflowY: "auto", fontSize: "14px", lineHeight: 1.7,
-              }}
+  marginTop: "12px",
+  background: "#ffffff",
+  border: "1px solid #d1d5db",
+  padding: isMobile ? "18px" : "32px",
+  borderRadius: "10px",
+  maxHeight: "65vh",
+  overflowY: "auto",
+  overflowX: "hidden",
+  fontSize: "14px",
+  lineHeight: 1.7,
+  color: "#111827",
+  boxShadow: "0 10px 30px rgba(0,0,0,0.12)",
+}}
             >
               {(aiData.finalResumeText || "").split("\n").map((line: string, index: number) => {
                 const trimmedLine = line.trim();
@@ -852,10 +1059,12 @@ const handleDownloadPDF = async () => {
                       marginBottom: isHeading ? "8px" : "6px",
                       fontWeight: isHeading ? 700 : 400,
                       fontSize: isHeading ? "15px" : "14px",
-                      borderBottom: isHeading ? "1px solid #374151" : "none",
+                      borderBottom: isHeading ? "1px solid #d1d5db" : "none",
                       paddingBottom: isHeading ? "4px" : "0",
                       paddingLeft: isBullet ? "18px" : "0",
-                      color: "#f8fafc",
+                      color: "#111827",
+                      wordBreak: "break-word",
+                      overflowWrap: "anywhere",
                     }}
                   >
                     {trimmedLine}
@@ -866,25 +1075,191 @@ const handleDownloadPDF = async () => {
           </div>
         </div>
       )}
+      {showComparison && result && aiData && (
+  <div
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.75)",
+      zIndex: 1100,
+      padding: isMobile ? "12px" : "24px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+    }}
+  >
+    <div
+      style={{
+        width: "100%",
+        maxWidth: "1150px",
+        maxHeight: "90vh",
+        overflowY: "auto",
+        background: "#111827",
+        border: "1px solid #374151",
+        borderRadius: "18px",
+        padding: isMobile ? "16px" : "22px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "18px",
+        }}
+      >
+        <h3
+          style={{
+            margin: 0,
+            color: "#fff",
+            fontSize: isMobile ? "16px" : "20px",
+          }}
+        >
+          Before vs After Resume
+        </h3>
+
+        <button
+          onClick={() => setShowComparison(false)}
+          style={{
+            border: "1px solid #374151",
+            background: "transparent",
+            color: "#fff",
+            borderRadius: "10px",
+            padding: "8px 12px",
+            cursor: "pointer",
+          }}
+        >
+          ✕
+        </button>
+      </div>
+<div
+  style={{
+  background: "rgba(34,197,94,0.08)",
+border: "1px solid rgba(34,197,94,0.2)",
+    borderRadius: "14px",
+    padding: "16px",
+    marginBottom: "16px",
+  }}
+>
+  <h4
+    style={{
+      margin: "0 0 10px",
+      color: "#ffffff",
+      fontSize: "16px",
+      fontWeight: 700,
+    }}
+  >
+    Key Improvements
+  </h4>
+
+  <ul
+    style={{
+      margin: 0,
+      paddingLeft: "18px",
+      color: "#cbd5e1",
+      lineHeight: 1.7,
+      fontSize: "14px",
+    }}
+  >
+    <li>
+      Added role-specific keywords:{" "}
+      {(result.missingKeywords || []).slice(0, 5).join(", ") ||
+        "targeted job keywords"}
+    </li>
+
+    <li>
+      Improved the summary to better align with the job description.
+    </li>
+
+    <li>
+      Reworded experience bullets with stronger action and measurable impact.
+    </li>
+
+    <li>
+      Restructured the resume into a cleaner ATS-friendly format.
+    </li>
+  </ul>
+</div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+          gap: "16px",
+        }}
+      >
+        <ComparisonBox
+          title="Original Resume"
+          text={result.resumeText}
+        />
+
+        <ComparisonBox
+          title="ATS Optimized Resume"
+          text={aiData.finalResumeText || ""}
+        />
+      </div>
+    </div>
+  </div>
+)}
     </main>
   );
 }
 
+function RoleBadge({ detectedRole }: { detectedRole?: string }) {
+  const displayRole =
+    detectedRole === "Other" || !detectedRole
+      ? "Role Not Confidently Detected"
+      : detectedRole;
+
+  const background =
+    detectedRole === "Business Analyst"
+      ? "#1e3a8a"
+      : detectedRole === "Data Analyst"
+      ? "#14532d"
+      : detectedRole?.includes("Developer") || detectedRole?.includes("Engineer")
+      ? "#312e81"
+      : "#374151";
+
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "8px 14px",
+        borderRadius: "999px",
+        fontSize: "14px",
+        fontWeight: 700,
+        background,
+        color: "#ffffff",
+      }}
+    >
+      {displayRole}
+    </div>
+  );
+}
+
 function SidebarLink({
-  label, active, href, colors,
+  label,
+  active,
+  href,
+  colors,
 }: {
-  label: string; active: boolean; href: string;
+  label: string;
+  active: boolean;
+  href: string;
   colors: { activeBg: string; text: string; muted: string };
 }) {
   return (
     <Link
       href={href}
       style={{
-        padding: "10px 12px", borderRadius: "10px", textDecoration: "none",
+        padding: "10px 12px",
+        borderRadius: "10px",
+        textDecoration: "none",
         background: active ? colors.activeBg : "transparent",
         fontWeight: active ? 600 : 500,
         color: active ? colors.text : colors.muted,
-        display: "block", fontSize: "14px",
+        display: "block",
+        fontSize: "14px",
       }}
     >
       {label}
@@ -893,15 +1268,37 @@ function SidebarLink({
 }
 
 function StatCard({
-  title, value, valueColor, colors,
+  title,
+  value,
+  valueColor,
+  colors,
 }: {
-  title: string; value: string; valueColor?: string;
+  title: string;
+  value: string;
+  valueColor?: string;
   colors: { panelBg: string; border: string; muted: string; text: string };
 }) {
   return (
-    <div style={{ background: colors.panelBg, border: `1px solid ${colors.border}`, borderRadius: "14px", padding: "15px" }}>
-      <div style={{ color: colors.muted, marginBottom: "8px", fontSize: "12px", fontWeight: 500 }}>{title}</div>
-      <div style={{ fontSize: "26px", fontWeight: 700, color: valueColor || colors.text, lineHeight: 1.1, letterSpacing: "-0.03em" }}>
+    <div
+      style={{
+        background: colors.panelBg,
+        border: `1px solid ${colors.border}`,
+        borderRadius: "14px",
+        padding: "15px",
+      }}
+    >
+      <div style={{ color: colors.muted, marginBottom: "8px", fontSize: "12px", fontWeight: 500 }}>
+        {title}
+      </div>
+      <div
+        style={{
+          fontSize: "26px",
+          fontWeight: 700,
+          color: valueColor || colors.text,
+          lineHeight: 1.1,
+          letterSpacing: "-0.03em",
+        }}
+      >
         {value}
       </div>
     </div>
@@ -909,14 +1306,28 @@ function StatCard({
 }
 
 function ResultCard({
-  title, items, color, colors,
+  title,
+  items,
+  color,
+  colors,
 }: {
-  title: string; items: string[]; color: string;
+  title: string;
+  items: string[];
+  color: string;
   colors: { panelBg: string; border: string; muted: string; text: string };
 }) {
   return (
-    <div style={{ background: colors.panelBg, border: `1px solid ${colors.border}`, borderRadius: "14px", padding: "15px" }}>
-      <h3 style={{ fontSize: "14px", fontWeight: 600, marginBottom: "10px", color: colors.text }}>{title}</h3>
+    <div
+      style={{
+        background: colors.panelBg,
+        border: `1px solid ${colors.border}`,
+        borderRadius: "14px",
+        padding: "15px",
+      }}
+    >
+      <h3 style={{ fontSize: "14px", fontWeight: 600, marginBottom: "10px", color: colors.text }}>
+        {title}
+      </h3>
       {items.length === 0 ? (
         <p style={{ color: colors.muted, fontSize: "13px", margin: 0 }}>No items found.</p>
       ) : (
@@ -933,12 +1344,85 @@ function ResultCard({
 }
 
 function secondaryButton(colors: {
-  secondaryButtonBg: string; secondaryButtonText: string; secondaryButtonBorder: string;
+  secondaryButtonBg: string;
+  secondaryButtonText: string;
+  secondaryButtonBorder: string;
 }) {
   return {
-    padding: "10px 12px", borderRadius: "10px",
+    padding: "10px 12px",
+    borderRadius: "10px",
     border: `1px solid ${colors.secondaryButtonBorder}`,
-    background: colors.secondaryButtonBg, color: colors.secondaryButtonText,
-    cursor: "pointer", textAlign: "left" as const, fontWeight: 500, fontSize: "13px",
+    background: colors.secondaryButtonBg,
+    color: colors.secondaryButtonText,
+    cursor: "pointer",
+    textAlign: "left" as const,
+    fontWeight: 500,
+    fontSize: "13px",
   };
+}
+
+function mobileIconButton(colors: {
+  border: string;
+  softBg: string;
+  text: string;
+}) {
+  return {
+    width: "34px",
+    height: "34px",
+    borderRadius: "8px",
+    border: `1px solid ${colors.border}`,
+    background: colors.softBg,
+    color: colors.text,
+    cursor: "pointer",
+    fontSize: "15px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  };
+}
+function ComparisonBox({
+  title,
+  text,
+}: {
+  title: string;
+  text: string;
+}) {
+  return (
+    <div
+      style={{
+        background: "#ffffff",
+        border: "1px solid #d1d5db",
+        borderRadius: "14px",
+        padding: "16px",
+        maxHeight: "72vh",
+        overflowY: "auto",
+        boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+      }}
+    >
+      <h4
+        style={{
+          margin: "0 0 12px",
+          color: "#111827",
+          fontSize: "15px",
+          fontWeight: 700,
+        }}
+      >
+        {title}
+      </h4>
+
+      <pre
+        style={{
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          margin: 0,
+          color: "#111827",
+          fontSize: "13px",
+          lineHeight: 1.7,
+          fontFamily: "inherit",
+        }}
+      >
+        {text}
+      </pre>
+    </div>
+  );
 }

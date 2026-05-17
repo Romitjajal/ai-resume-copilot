@@ -12,6 +12,76 @@ const SKILL_GROUPS = {
   database: ["mongodb", "postgresql", "mysql", "sql"],
   cloud: ["aws", "docker", "ci/cd", "kubernetes"],
   testing: ["unit testing", "integration testing", "jest", "testing"],
+
+  businessAnalyst: [
+    "business analyst",
+    "business process analyst",
+    "business analysis",
+    "business processes",
+    "process analyst",
+    "process analysis",
+    "process mining",
+    "process modelling",
+    "process modeling",
+    "process mapping",
+    "process design",
+    "process documentation",
+    "process improvement",
+    "continuous improvement",
+    "workflow optimisation",
+    "workflow optimization",
+    "workflow diagrams",
+    "work task management",
+    "standardisation",
+    "standardization",
+    "operational efficiency",
+    "compliance",
+    "governance",
+    "audit standards",
+    "system controls",
+    "change adoption",
+    "training",
+    "training packs",
+    "facilitation",
+    "workshops",
+    "stakeholder",
+    "stakeholders",
+    "stakeholder management",
+    "stakeholder communication",
+    "requirements gathering",
+    "requirement gathering",
+    "functional requirements",
+    "user stories",
+    "uat",
+    "user acceptance testing",
+    "bpmn",
+    "bpmn 2.0",
+    "aris",
+    "signavio",
+    "celonis",
+    "power bi",
+    "excel",
+    "brd",
+    "frd",
+    "agile",
+  ],
+
+  dataAnalyst: [
+    "data analysis",
+    "data analyst",
+    "analytics",
+    "excel",
+    "sql",
+    "power bi",
+    "tableau",
+    "dashboards",
+    "dashboard",
+    "reporting",
+    "data visualization",
+    "data visualisation",
+    "kpi",
+    "kpis",
+  ],
 };
 
 export async function POST(req: Request) {
@@ -46,119 +116,182 @@ export async function POST(req: Request) {
       );
     }
 
-   const MAX_LENGTH = 12000;
+    const MAX_LENGTH = 12000;
 
-const trimmedResumeText =
-  resumeText.length > MAX_LENGTH
-    ? resumeText.slice(0, MAX_LENGTH)
-    : resumeText;
+    const trimmedResumeText =
+      resumeText.length > MAX_LENGTH ? resumeText.slice(0, MAX_LENGTH) : resumeText;
 
-const trimmedJobDescription =
-  jobDescription.length > MAX_LENGTH
-    ? jobDescription.slice(0, MAX_LENGTH)
-    : jobDescription;
+    const trimmedJobDescription =
+      jobDescription.length > MAX_LENGTH
+        ? jobDescription.slice(0, MAX_LENGTH)
+        : jobDescription;
 
-const normalizedResume = normalizeText(trimmedResumeText);
-const normalizedJD = normalizeText(trimmedJobDescription);
+    const normalizedResume = normalizeText(trimmedResumeText);
+    const normalizedJD = normalizeText(trimmedJobDescription);
 
     const matchedKeywords = new Set<string>();
     const missingKeywords = new Set<string>();
 
+    const detectedRole = detectRole(normalizedResume);
+
     let score = 0;
 
-    score += scoreSkillGroup(
-      SKILL_GROUPS.frontend,
-      normalizedResume,
-      normalizedJD,
-      15,
-      matchedKeywords,
-      missingKeywords
-    );
+    if (detectedRole === "Business Analyst") {
+      score += scoreSkillGroup(
+        SKILL_GROUPS.businessAnalyst,
+        normalizedResume,
+        normalizedJD,
+        60,
+        matchedKeywords,
+        missingKeywords
+      );
 
-    score += scoreSkillGroup(
-      SKILL_GROUPS.backend,
-      normalizedResume,
-      normalizedJD,
-      20,
-      matchedKeywords,
-      missingKeywords
-    );
+      score += scoreSkillGroup(
+        SKILL_GROUPS.dataAnalyst,
+        normalizedResume,
+        normalizedJD,
+        20,
+        matchedKeywords,
+        missingKeywords
+      );
 
-    score += scoreSkillGroup(
-      SKILL_GROUPS.database,
-      normalizedResume,
-      normalizedJD,
-      10,
-      matchedKeywords,
-      missingKeywords
-    );
+      score += scoreSkillGroup(
+        SKILL_GROUPS.database,
+        normalizedResume,
+        normalizedJD,
+        10,
+        matchedKeywords,
+        missingKeywords
+      );
+    } else if (detectedRole === "Data Analyst") {
+      score += scoreSkillGroup(
+        SKILL_GROUPS.dataAnalyst,
+        normalizedResume,
+        normalizedJD,
+        60,
+        matchedKeywords,
+        missingKeywords
+      );
 
-    score += scoreSkillGroup(
-      SKILL_GROUPS.cloud,
-      normalizedResume,
-      normalizedJD,
-      10,
-      matchedKeywords,
-      missingKeywords
-    );
+      score += scoreSkillGroup(
+        SKILL_GROUPS.database,
+        normalizedResume,
+        normalizedJD,
+        20,
+        matchedKeywords,
+        missingKeywords
+      );
+    } else {
+      score += scoreSkillGroup(
+        SKILL_GROUPS.frontend,
+        normalizedResume,
+        normalizedJD,
+        15,
+        matchedKeywords,
+        missingKeywords
+      );
 
-    score += scoreSkillGroup(
-      SKILL_GROUPS.testing,
-      normalizedResume,
-      normalizedJD,
-      5,
-      matchedKeywords,
-      missingKeywords
-    );
+      score += scoreSkillGroup(
+        SKILL_GROUPS.backend,
+        normalizedResume,
+        normalizedJD,
+        20,
+        matchedKeywords,
+        missingKeywords
+      );
+
+      score += scoreSkillGroup(
+        SKILL_GROUPS.database,
+        normalizedResume,
+        normalizedJD,
+        10,
+        matchedKeywords,
+        missingKeywords
+      );
+
+      score += scoreSkillGroup(
+        SKILL_GROUPS.cloud,
+        normalizedResume,
+        normalizedJD,
+        10,
+        matchedKeywords,
+        missingKeywords
+      );
+
+      score += scoreSkillGroup(
+        SKILL_GROUPS.testing,
+        normalizedResume,
+        normalizedJD,
+        5,
+        matchedKeywords,
+        missingKeywords
+      );
+    }
 
     score += coreKeywordScore(normalizedResume, normalizedJD, matchedKeywords, missingKeywords);
 
-    if (score > 100) score = 100;
+    score = Math.min(score, 100);
 
     const sections = extractResumeSections(resumeText);
 
-    const sectionScores = {
-      summary: scoreSection(sections.summary, normalizedJD),
-      skills: scoreSection(sections.skills, normalizedJD),
-      experience: scoreSection(sections.experience, normalizedJD),
-      projects: scoreSection(sections.projects, normalizedJD),
-      education: scoreSection(sections.education, normalizedJD),
-    };
+  const sectionScores = {
+  summary: scoreSection(sections.summary, normalizedJD),
+  skills: scoreSection(sections.skills, normalizedJD),
+  experience: scoreSection(sections.experience, normalizedJD),
 
-    const detectedRole = detectRole(normalizedJD);
+  projects:
+    detectedRole === "Business Analyst"
+      ? 100
+      : scoreSection(sections.projects, normalizedJD),
 
-    const suggestions = buildSuggestions(
-      Array.from(missingKeywords),
-      sectionScores,
-      detectedRole
-    );
+  education: sections.education ? 100 : 0,
+};
+const keywordScore = score;
 
-  let savedScan = null;
+const sectionAverage = Math.round(
+  (sectionScores.summary +
+    sectionScores.skills +
+    sectionScores.experience +
+    sectionScores.projects +
+    sectionScores.education) / 5
+);
 
-if (payload) {
-  try {
-    savedScan = await prisma.resumeScan.create({
-      data: {
-        userId: payload.userId,
-        fileName: file.name,
-        resumeText: trimmedResumeText,
-        jobDescription: trimmedJobDescription,
-        score,
-        summaryScore: sectionScores.summary,
-        skillsScore: sectionScores.skills,
-        experienceScore: sectionScores.experience,
-        projectsScore: sectionScores.projects,
-        educationScore: sectionScores.education,
-        detectedRole,
-        matchedKeywords: Array.from(matchedKeywords),
-        missingKeywords: Array.from(missingKeywords),
-        suggestions,
-      },
-    });
-  } catch (dbError) {
-    console.error("History save failed:", dbError);
-  }
-}
+score = Math.round(keywordScore * 0.5 + sectionAverage * 0.5);
+
+score = Math.min(score, 100);
+
+const suggestions = buildSuggestions(
+  Array.from(missingKeywords),
+  sectionScores,
+  detectedRole
+);
+
+    let savedScan = null;
+
+    if (payload) {
+      try {
+        savedScan = await prisma.resumeScan.create({
+          data: {
+            userId: payload.userId,
+            fileName: file.name,
+            resumeText: trimmedResumeText,
+            jobDescription: trimmedJobDescription,
+            score,
+            summaryScore: sectionScores.summary,
+            skillsScore: sectionScores.skills,
+            experienceScore: sectionScores.experience,
+            projectsScore: sectionScores.projects,
+            educationScore: sectionScores.education,
+            detectedRole,
+            matchedKeywords: Array.from(matchedKeywords),
+            missingKeywords: Array.from(missingKeywords),
+            suggestions,
+          },
+        });
+      } catch (dbError) {
+        console.error("History save failed:", dbError);
+      }
+    }
 
     return NextResponse.json({
       id: savedScan?.id,
@@ -181,7 +314,12 @@ if (payload) {
 }
 
 function normalizeText(text: string) {
-  return text.toLowerCase().replace(/\s+/g, " ").trim();
+  return text
+    .toLowerCase()
+    .replace(/[\u2010-\u2015]/g, "-")
+    .replace(/[^a-z0-9+#./\-\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function scoreSkillGroup(
@@ -192,13 +330,21 @@ function scoreSkillGroup(
   matched: Set<string>,
   missing: Set<string>
 ) {
-  const relevantSkills = skills.filter((skill) => jd.includes(skill));
+  const normalizedResume = normalizeText(resume);
+  const normalizedJD = normalizeText(jd);
+
+  const relevantSkills = skills.filter((skill) =>
+    normalizedJD.includes(normalizeText(skill))
+  );
+
   if (relevantSkills.length === 0) return 0;
 
   let found = 0;
 
   for (const skill of relevantSkills) {
-    if (resume.includes(skill)) {
+    const normalizedSkill = normalizeText(skill);
+
+    if (normalizedResume.includes(normalizedSkill)) {
       found++;
       matched.add(skill);
     } else {
@@ -226,15 +372,48 @@ function coreKeywordScore(
     "aws",
     "react",
     "node.js",
+    "business analyst",
+    "business process analyst",
+    "business analysis",
+    "business processes",
+    "process analyst",
+    "process mapping",
+    "process design",
+    "process documentation",
+    "continuous improvement",
+    "stakeholder",
+    "stakeholders",
+    "stakeholder management",
+    "requirements gathering",
+    "process improvement",
+    "training",
+    "facilitation",
+    "workshops",
+    "governance",
+    "system controls",
+    "uat",
+    "data analyst",
+    "data analysis",
+    "analytics",
+    "dashboards",
+    "reporting",
   ];
 
-  const relevantTerms = importantTerms.filter((term) => jd.includes(term));
-  if (relevantTerms.length === 0) return 40;
+  const normalizedResume = normalizeText(resume);
+  const normalizedJD = normalizeText(jd);
+
+  const relevantTerms = importantTerms.filter((term) =>
+    normalizedJD.includes(normalizeText(term))
+  );
+
+  if (relevantTerms.length === 0) return 0;
 
   let found = 0;
 
   for (const term of relevantTerms) {
-    if (resume.includes(term)) {
+    const normalizedTerm = normalizeText(term);
+
+    if (normalizedResume.includes(normalizedTerm)) {
       found++;
       matched.add(term);
     } else {
@@ -242,7 +421,7 @@ function coreKeywordScore(
     }
   }
 
-  return Math.round((found / relevantTerms.length) * 40);
+  return Math.round((found / relevantTerms.length) * 30);
 }
 
 function extractResumeSections(resumeText: string) {
@@ -264,12 +443,28 @@ function extractResumeSections(resumeText: string) {
   for (const line of lines) {
     const normalized = line.toLowerCase();
 
-    if (isHeading(normalized, ["summary", "professional summary", "profile"])) {
+    if (
+      isHeading(normalized, [
+        "summary",
+        "professional summary",
+        "profile",
+        "profile overview",
+        "career summary",
+      ])
+    ) {
       currentSection = "summary";
       continue;
     }
 
-    if (isHeading(normalized, ["skills", "technical skills", "core skills"])) {
+    if (
+      isHeading(normalized, [
+        "skills",
+        "technical skills",
+        "core skills",
+        "core competencies",
+        "competencies",
+      ])
+    ) {
       currentSection = "skills";
       continue;
     }
@@ -279,14 +474,25 @@ function extractResumeSections(resumeText: string) {
         "experience",
         "work experience",
         "professional experience",
+        "professional work experience",
         "employment",
+        "employment history",
       ])
     ) {
       currentSection = "experience";
       continue;
     }
 
-    if (isHeading(normalized, ["projects", "personal projects", "academic projects"])) {
+    if (
+      isHeading(normalized, [
+        "projects",
+        "personal projects",
+        "academic projects",
+        "research project",
+        "research projects",
+        "academic project",
+      ])
+    ) {
       currentSection = "projects";
       continue;
     }
@@ -305,7 +511,13 @@ function extractResumeSections(resumeText: string) {
 }
 
 function isHeading(line: string, possibleHeadings: string[]) {
-  return possibleHeadings.some((heading) => line === heading);
+  const cleanLine = line
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return possibleHeadings.some((heading) => cleanLine === heading);
 }
 
 function scoreSection(sectionText: string, normalizedJD: string) {
@@ -314,16 +526,22 @@ function scoreSection(sectionText: string, normalizedJD: string) {
   if (!text) return 0;
 
   const jdKeywords = extractRelevantKeywords(normalizedJD);
-  if (jdKeywords.length === 0) return 70;
+
+  if (jdKeywords.length === 0) return 0;
 
   let found = 0;
+
   for (const keyword of jdKeywords) {
-    if (text.includes(keyword)) {
+    if (text.includes(normalizeText(keyword))) {
       found++;
     }
   }
 
-  return Math.min(100, Math.round((found / jdKeywords.length) * 100));
+  const score = Math.round(
+  (found / Math.max(jdKeywords.length * 0.35, 1)) * 100
+);
+
+return Math.min(100, score);
 }
 
 function extractRelevantKeywords(normalizedJD: string) {
@@ -333,6 +551,8 @@ function extractRelevantKeywords(normalizedJD: string) {
     ...SKILL_GROUPS.database,
     ...SKILL_GROUPS.cloud,
     ...SKILL_GROUPS.testing,
+    ...SKILL_GROUPS.businessAnalyst,
+    ...SKILL_GROUPS.dataAnalyst,
     "full stack",
     "software engineer",
     "scalable",
@@ -340,49 +560,89 @@ function extractRelevantKeywords(normalizedJD: string) {
     "git",
   ];
 
-  return Array.from(new Set(allKeywords.filter((keyword) => normalizedJD.includes(keyword))));
+  const normalizedJDText = normalizeText(normalizedJD);
+
+  return Array.from(
+    new Set(
+      allKeywords.filter((keyword) =>
+        normalizedJDText.includes(normalizeText(keyword))
+      )
+    )
+  );
 }
 
 function detectRole(text: string) {
+  const normalizedText = normalizeText(text);
+
+  const frontendHits = countMatches(normalizedText, SKILL_GROUPS.frontend);
+  const backendHits = countMatches(normalizedText, SKILL_GROUPS.backend);
+  const cloudHits = countMatches(normalizedText, SKILL_GROUPS.cloud);
+  const databaseHits = countMatches(normalizedText, SKILL_GROUPS.database);
+  const baHits = countMatches(normalizedText, SKILL_GROUPS.businessAnalyst);
+  const dataHits = countMatches(normalizedText, SKILL_GROUPS.dataAnalyst);
+
+  const hasStrongDevSignals =
+    normalizedText.includes("software engineer") ||
+    normalizedText.includes("software developer") ||
+    normalizedText.includes("full stack developer") ||
+    normalizedText.includes("frontend developer") ||
+    normalizedText.includes("backend developer") ||
+    normalizedText.includes("react") ||
+    normalizedText.includes("node.js") ||
+    normalizedText.includes("typescript") ||
+    normalizedText.includes("javascript");
+
   if (
-    text.includes("it support") ||
-    text.includes("technical support") ||
-    text.includes("help desk") ||
-    text.includes("desktop support") ||
-    text.includes("troubleshooting")
+    normalizedText.includes("it support") ||
+    normalizedText.includes("technical support") ||
+    normalizedText.includes("help desk") ||
+    normalizedText.includes("desktop support") ||
+    normalizedText.includes("troubleshooting")
   ) {
     return "IT Support Specialist";
   }
 
-  if (text.includes("software engineer")) {
-    return "Software Engineer";
-  }
-
-  const frontendHits = countMatches(text, SKILL_GROUPS.frontend);
-  const backendHits = countMatches(text, SKILL_GROUPS.backend);
-  const cloudHits = countMatches(text, SKILL_GROUPS.cloud);
-
-  if (text.includes("devops") || cloudHits >= 2) {
-    return "DevOps Engineer";
-  }
-
-  if (frontendHits >= 3 && backendHits >= 3) {
+  if (hasStrongDevSignals && frontendHits >= 3 && backendHits >= 2) {
     return "Full Stack Developer";
   }
 
-  if (frontendHits >= 3) {
+  if (hasStrongDevSignals && frontendHits >= 3) {
     return "Frontend Developer";
   }
 
-  if (backendHits >= 3) {
+  if (hasStrongDevSignals && backendHits >= 3) {
     return "Backend Developer";
   }
 
-  return "Software Developer";
+  if (normalizedText.includes("software engineer") || normalizedText.includes("software developer")) {
+    return "Software Engineer";
+  }
+
+  if (normalizedText.includes("devops") || cloudHits >= 2) {
+    return "DevOps Engineer";
+  }
+
+  if (baHits >= 4 && frontendHits < 3 && backendHits < 2) {
+    return "Business Analyst";
+  }
+
+  if (dataHits >= 4 && frontendHits < 3 && backendHits < 2) {
+    return "Data Analyst";
+  }
+
+  if (databaseHits >= 2 && dataHits >= 3) {
+    return "Data Analyst";
+  }
+
+  return "Other";
 }
 
 function countMatches(text: string, keywords: string[]) {
-  return keywords.filter((keyword) => text.includes(keyword)).length;
+  const normalizedText = normalizeText(text);
+
+  return keywords.filter((keyword) =>
+    normalizedText.includes(normalizeText(keyword))
+  ).length;
 }
 
 function buildSuggestions(
@@ -403,15 +663,37 @@ function buildSuggestions(
   }
 
   if (sectionScores.skills < 60) {
-    suggestions.push("Add a stronger technical skills section with tools and frameworks relevant to the job.");
+    if (detectedRole === "Business Analyst") {
+      suggestions.push(
+        "Add stronger business process skills such as process design, documentation, governance, stakeholder engagement, workshops, and continuous improvement."
+      );
+    } else if (detectedRole === "Data Analyst") {
+      suggestions.push(
+        "Add stronger data skills such as SQL, Excel, Power BI, Tableau, dashboards, reporting, and KPI analysis."
+      );
+    } else {
+      suggestions.push("Add a stronger technical skills section with tools and frameworks relevant to the job.");
+    }
   }
 
   if (sectionScores.experience < 60) {
-    suggestions.push("Strengthen your experience section with clearer responsibilities and impact.");
+    suggestions.push("Strengthen your experience section with clearer responsibilities and measurable impact.");
   }
 
-  if (sectionScores.projects < 60) {
+  if (sectionScores.projects < 60 && detectedRole !== "Business Analyst") {
     suggestions.push("Add stronger project descriptions that show relevant technical work.");
+  }
+
+  if (missingKeywords.includes("process documentation")) {
+    suggestions.push("Add examples of process documentation, training packs, or SOP-style materials if you have done this.");
+  }
+
+  if (missingKeywords.includes("governance") || missingKeywords.includes("system controls")) {
+    suggestions.push("Mention governance, compliance, audit, or system control experience if relevant.");
+  }
+
+  if (missingKeywords.includes("training") || missingKeywords.includes("facilitation")) {
+    suggestions.push("Highlight training, facilitation, or workshop experience.");
   }
 
   if (missingKeywords.includes("docker")) {
@@ -422,31 +704,17 @@ function buildSuggestions(
     suggestions.push("Mention CI/CD pipelines or deployment automation if applicable.");
   }
 
-  if (
-    missingKeywords.includes("unit testing") ||
-    missingKeywords.includes("integration testing") ||
-    missingKeywords.includes("testing")
-  ) {
-    suggestions.push("Add testing experience such as Jest, unit testing, or integration testing.");
-  }
-
   if (missingKeywords.includes("postgresql") || missingKeywords.includes("sql")) {
-    suggestions.push("Mention SQL or PostgreSQL projects if you have used relational databases.");
+    suggestions.push("Mention SQL or database/reporting work if you have used it.");
   }
 
   if (missingKeywords.includes("aws")) {
     suggestions.push("Highlight AWS usage such as EC2, S3, or deployment workflows.");
   }
 
-  if (detectedRole === "Frontend Developer") {
-    suggestions.push(
-      "Your resume looks frontend-heavy. Add backend or deployment work if applying for full stack roles."
-    );
-  }
-
   if (suggestions.length === 0) {
     suggestions.push(
-      "Your resume aligns well. Improve it further by adding quantified achievements and stronger project impact."
+      "Your resume aligns well. Improve it further by adding quantified achievements and stronger impact."
     );
   }
 
