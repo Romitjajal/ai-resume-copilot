@@ -50,13 +50,13 @@ Frontend → API Routes → OpenAI Processing → PostgreSQL Storage → Resume 
 ## Screenshots
 
 ### Resume Analyzer
-![Resume Analyzer](
+![Resume Analyzer](public/Home.png)
 
-### Resume History
-![Resume History](public/Screenshots/history.png)
+### Resume Analysis
+![Resume History](public/analysis.png)
 
 ### AI Tailored Resume Comparison
-![Resume Comparison](public/Screenshots/compare.png)
+![Resume Comparison](public/compare.png)
 
 ## Run Locally
 
