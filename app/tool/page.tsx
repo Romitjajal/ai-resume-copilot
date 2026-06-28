@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-
+import { FileText, FileType2, Scale } from "lucide-react";
 type AnalyzeResult = {
   id?: string;
   score: number;
@@ -104,15 +104,15 @@ export default function Home() {
     setAiData(null);
     setShowPreview(false);
 
-    if (!file) {
-      setError("Please upload a DOCX resume.");
-      return;
-    }
+   if (!file) {
+  setError("Please upload a DOCX or PDF resume.");
+  return;
+}
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Please upload a DOCX file under 5MB.");
-      return;
-    }
+if (file.size > 5 * 1024 * 1024) {
+  setError("Please upload a DOCX or PDF file under 5MB.");
+  return;
+}
 
     if (!jobDescription.trim()) {
       setError("Please enter a job description.");
@@ -283,24 +283,110 @@ export default function Home() {
     saveAs(blob, "ATS_Tailored_Resume.docx");
   };
 
-  const handleDownloadPDF = async () => {
-    const html2pdf = (await import("html2pdf.js")).default;
-    const element = document.getElementById("resume-pdf-template");
+const handleDownloadPDF = async () => {
+  if (!aiData?.finalResumeText) return;
 
-    if (!element) return;
+  const { jsPDF } = await import("jspdf");
 
-    html2pdf()
-      .set({
-        margin: 0.4,
-        filename: "AI_Tailored_Resume.pdf",
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
-      })
-      .from(element)
-      .save();
+  const doc = new jsPDF({
+    unit: "pt",
+    format: "a4",
+  });
+
+  const margin = 50;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const maxWidth = pageWidth - margin * 2;
+
+  const resumeHeadings = [
+    "SUMMARY",
+    "SKILLS",
+    "EXPERIENCE",
+    "PROJECTS",
+    "EDUCATION",
+    "CERTIFICATIONS",
+  ];
+
+  let y = margin;
+
+  const lines = aiData.finalResumeText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const addPageIfNeeded = (neededHeight: number) => {
+    if (y + neededHeight > pageHeight - margin) {
+      doc.addPage();
+      y = margin;
+    }
   };
 
+  lines.forEach((line, index) => {
+    const isName = index === 0;
+    const isRoleTitle = index === 1;
+    const isHeading = resumeHeadings.includes(line.toUpperCase());
+
+    if (isName) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(20);
+
+      addPageIfNeeded(28);
+      doc.text(line.toUpperCase(), margin, y);
+      y += 28;
+      return;
+    }
+
+    if (isRoleTitle) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+
+      addPageIfNeeded(18);
+      doc.text(line, margin, y);
+      y += 18;
+      return;
+    }
+
+    if (isHeading) {
+      y += 12;
+
+      addPageIfNeeded(34);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+
+      doc.text(line.toUpperCase(), margin, y);
+      y += 6;
+
+      doc.setDrawColor(180);
+      doc.line(margin, y, pageWidth - margin, y);
+
+      y += 16;
+      return;
+    }
+
+    const isBullet =
+      line.startsWith("-") ||
+      line.startsWith("•") ||
+      line.startsWith("*");
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10.5);
+
+    const cleanLine = isBullet
+      ? `• ${line.replace(/^[-•*]\s*/, "")}`
+      : line;
+
+    const wrappedLines = doc.splitTextToSize(cleanLine, maxWidth);
+
+    addPageIfNeeded(wrappedLines.length * 14 + 8);
+
+    doc.text(wrappedLines, margin, y);
+
+    y += wrappedLines.length * 14 + 6;
+  });
+
+  doc.save("AI_Tailored_Resume.pdf");
+};
   const scoreColor =
     result && result.score >= 80
       ? "#22c55e"
@@ -707,7 +793,7 @@ export default function Home() {
                   <input
                     id="resumeUpload"
                     type="file"
-                    accept=".docx"
+                   accept=".docx,.pdf"
                     onChange={(e) => setFile(e.target.files?.[0] || null)}
                     style={{ display: "none" }}
                   />
@@ -728,7 +814,7 @@ export default function Home() {
                       fontSize: "13px",
                     }}
                   >
-                    Upload DOCX
+                    Upload Resume
                   </label>
 
                   <span
@@ -740,6 +826,15 @@ export default function Home() {
                   >
                     {file ? file.name : "Upload your resume to get started"}
                   </span>
+                  <div
+  style={{
+    color: colors.muted,
+    fontSize: "12px",
+    width: "100%",
+  }}
+>
+  Supports DOCX and PDF • Max file size 5MB
+</div>
                 </div>
               </div>
 
@@ -967,24 +1062,56 @@ export default function Home() {
               </h3>
 
               <div style={{ display: "flex", gap: "10px", alignItems: "center", flexShrink: 0 }}>
-  <button
-    onClick={handleDownloadResume}
-    style={{
-      padding: isMobile ? "8px 12px" : "10px 16px",
-      borderRadius: "10px",
-      border: "none",
-      background: "#6366f1",
-      color: "#ffffff",
-      fontWeight: 700,
-      fontSize: isMobile ? "12px" : "13px",
-      cursor: "pointer",
-      boxShadow: "0 8px 20px rgba(99,102,241,0.35)",
-      whiteSpace: "nowrap",
-    }}
-  >
-    Download ATS Resume
-  </button>
+ <button
+  onClick={(e) => {
+    handleDownloadResume();
+    e.currentTarget.blur();
+  }}
+  style={{
+    padding: isMobile ? "8px 12px" : "10px 16px",
+    borderRadius: "10px",
+    border: "none",
+    background: "#6366f1",
+    color: "#ffffff",
+    fontWeight: 700,
+    fontSize: isMobile ? "12px" : "13px",
+    cursor: "pointer",
+    boxShadow: "0 8px 20px rgba(99,102,241,0.35)",
+    whiteSpace: "nowrap",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    outline: "none",
+  }}
+>
+<FileText size={18} strokeWidth={2.2} />
+<span>Export Word</span>
+</button>
 
+<button
+  onClick={(e) => {
+    handleDownloadPDF();
+    e.currentTarget.blur();
+  }}
+  style={{
+    padding: isMobile ? "8px 12px" : "10px 16px",
+    borderRadius: "10px",
+    border: "1px solid #374151",
+    background: "transparent",
+    color: "#ffffff",
+    fontWeight: 700,
+    fontSize: isMobile ? "12px" : "13px",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    outline: "none",
+  }}
+>
+  <FileType2 size={18} strokeWidth={2.2} />
+<span>Export PDF</span>
+</button>
   <button
     onClick={() => setShowComparison(true)}
     style={{
@@ -1141,62 +1268,67 @@ border: "1px solid rgba(34,197,94,0.2)",
     marginBottom: "16px",
   }}
 >
-  <h4
-    style={{
-      margin: "0 0 10px",
-      color: "#ffffff",
-      fontSize: "16px",
-      fontWeight: 700,
-    }}
-  >
-    Key Improvements
-  </h4>
+<h4
+  style={{
+    margin: "0 0 10px",
+    color: "#ffffff",
+    fontSize: "16px",
+    fontWeight: 700,
+  }}
+>
+  Key Improvements
+</h4>
 
-  <ul
-    style={{
-      margin: 0,
-      paddingLeft: "18px",
-      color: "#cbd5e1",
-      lineHeight: 1.7,
-      fontSize: "14px",
-    }}
-  >
-    <li>
-      Added role-specific keywords:{" "}
-      {(result.missingKeywords || []).slice(0, 5).join(", ") ||
-        "targeted job keywords"}
-    </li>
-
-    <li>
-      Improved the summary to better align with the job description.
-    </li>
-
-    <li>
-      Reworded experience bullets with stronger action and measurable impact.
-    </li>
-
-    <li>
-      Restructured the resume into a cleaner ATS-friendly format.
-    </li>
-  </ul>
+<div
+  style={{
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "10px",
+    marginTop: "12px",
+  }}
+>
+  {(result.missingKeywords || []).slice(0, 6).map((keyword) => (
+    <span
+      key={keyword}
+      style={{
+        background: "rgba(34,197,94,0.15)",
+        border: "1px solid rgba(34,197,94,0.35)",
+        color: "#bbf7d0",
+        padding: "6px 10px",
+        borderRadius: "999px",
+        fontSize: "13px",
+        fontWeight: 600,
+      }}
+    >
+      + {keyword}
+    </span>
+  ))}
 </div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-          gap: "16px",
-        }}
-      >
-        <ComparisonBox
-          title="Original Resume"
-          text={result.resumeText}
-        />
 
-        <ComparisonBox
-          title="ATS Optimized Resume"
-          text={aiData.finalResumeText || ""}
-        />
-      </div>
+<ul
+  style={{
+    margin: "14px 0 0",
+    paddingLeft: "18px",
+    color: "#cbd5e1",
+    lineHeight: 1.7,
+    fontSize: "14px",
+  }}
+>
+  <li>Improved the summary to better align with the job description.</li>
+  <li>Reworded experience bullets with stronger action and measurable impact.</li>
+  <li>Restructured the resume into a cleaner ATS-friendly format.</li>
+</ul>
+</div>
+     <div
+  style={{
+    display: "grid",
+    gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+    gap: "16px",
+  }}
+>
+  <ComparisonBox title="Original Resume" text={result.resumeText} />
+  <ComparisonBox title="ATS Optimized Resume" text={aiData.finalResumeText || ""} />
+</div>
     </div>
   </div>
 )}
@@ -1290,17 +1422,40 @@ function StatCard({
       <div style={{ color: colors.muted, marginBottom: "8px", fontSize: "12px", fontWeight: 500 }}>
         {title}
       </div>
-      <div
-        style={{
-          fontSize: "26px",
-          fontWeight: 700,
-          color: valueColor || colors.text,
-          lineHeight: 1.1,
-          letterSpacing: "-0.03em",
-        }}
-      >
-        {value}
-      </div>
+     <>
+  <div
+    style={{
+      fontSize: "26px",
+      fontWeight: 700,
+      color: valueColor || colors.text,
+      lineHeight: 1.1,
+      letterSpacing: "-0.03em",
+    }}
+  >
+    {value}
+  </div>
+
+  {title === "Overall Score" && (
+    <div
+      style={{
+        marginTop: "8px",
+        fontSize: "12px",
+        fontWeight: 600,
+        color: valueColor || colors.muted,
+      }}
+    >
+      {Number(value.split("/")[0]) >= 90
+        ? "Outstanding Match"
+        : Number(value.split("/")[0]) >= 80
+        ? "Excellent Match"
+        : Number(value.split("/")[0]) >= 70
+        ? "Strong Match"
+        : Number(value.split("/")[0]) >= 60
+        ? "Moderate Match"
+        : "Needs Improvement"}
+    </div>
+  )}
+</>
     </div>
   );
 }
@@ -1325,24 +1480,55 @@ function ResultCard({
         padding: "15px",
       }}
     >
-      <h3 style={{ fontSize: "14px", fontWeight: 600, marginBottom: "10px", color: colors.text }}>
-        {title}
+      <h3
+        style={{
+          fontSize: "14px",
+          fontWeight: 600,
+          marginBottom: "12px",
+          color: colors.text,
+        }}
+      >
+        {title} ({items.length})
       </h3>
+
       {items.length === 0 ? (
-        <p style={{ color: colors.muted, fontSize: "13px", margin: 0 }}>No items found.</p>
+        <p style={{ color: colors.muted, fontSize: "13px", margin: 0 }}>
+          No items found.
+        </p>
       ) : (
-        <ul style={{ paddingLeft: "18px", margin: 0 }}>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "8px",
+          }}
+        >
           {items.map((item, index) => (
-            <li key={`${item}-${index}`} style={{ marginBottom: "7px", color, fontSize: "13px", lineHeight: 1.5 }}>
-              <span style={{ color: colors.text }}>{item}</span>
-            </li>
+            <span
+              key={`${item}-${index}`}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "999px",
+                background:
+                  title.includes("Matched")
+                    ? "rgba(34,197,94,0.15)"
+                    : title.includes("Missing")
+                    ? "rgba(239,68,68,0.15)"
+                    : "rgba(99,102,241,0.15)",
+                border: `1px solid ${color}`,
+                color,
+                fontSize: "12px",
+                fontWeight: 600,
+              }}
+            >
+              {item}
+            </span>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
 }
-
 function secondaryButton(colors: {
   secondaryButtonBg: string;
   secondaryButtonText: string;

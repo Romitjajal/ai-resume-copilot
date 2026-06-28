@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import mammoth from "mammoth";
 import { prisma } from "@/lib/prisma";
 import { getTokenFromRequest, verifyToken } from "@/lib/auth";
-
+import pdf from "pdf-parse-new";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
@@ -106,16 +106,38 @@ export async function POST(req: Request) {
 
     let resumeText = "";
 
-    if (file.name.toLowerCase().endsWith(".docx")) {
-      const result = await mammoth.extractRawText({ buffer });
-      resumeText = result.value.trim();
-    } else {
-      return NextResponse.json(
-        { error: "Only DOCX is supported right now" },
-        { status: 400 }
-      );
-    }
+ if (file.name.toLowerCase().endsWith(".docx")) {
+  const result = await mammoth.extractRawText({ buffer });
+  resumeText = result.value.trim();
+} else if (file.name.toLowerCase().endsWith(".pdf")) {
+  try {
+    const result = await pdf(buffer);
+    resumeText = result.text.trim();
+  } catch (err) {
+    console.error("PDF Parse Error:", err);
 
+    return NextResponse.json(
+      {
+        error: "Unable to read this PDF. Please upload another PDF or DOCX.",
+      },
+      { status: 400 }
+    );
+  }
+
+  if (!resumeText) {
+    return NextResponse.json(
+      {
+        error: "This PDF contains no selectable text. It may be scanned.",
+      },
+      { status: 400 }
+    );
+  }
+} else {
+  return NextResponse.json(
+    { error: "Only DOCX and PDF files are supported right now" },
+    { status: 400 }
+  );
+}
     const MAX_LENGTH = 12000;
 
     const trimmedResumeText =
