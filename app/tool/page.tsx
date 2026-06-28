@@ -105,12 +105,12 @@ export default function Home() {
     setShowPreview(false);
 
    if (!file) {
-  setError("Please upload a DOCX or PDF resume.");
+  setError("Please upload a DOCX resume.");
   return;
 }
 
 if (file.size > 5 * 1024 * 1024) {
-  setError("Please upload a DOCX or PDF file under 5MB.");
+  setError("Please upload a DOCX file under 5MB.");
   return;
 }
 
@@ -793,7 +793,7 @@ const handleDownloadPDF = async () => {
                   <input
                     id="resumeUpload"
                     type="file"
-                   accept=".docx,.pdf"
+                   accept=".docx"
                     onChange={(e) => setFile(e.target.files?.[0] || null)}
                     style={{ display: "none" }}
                   />
@@ -833,7 +833,7 @@ const handleDownloadPDF = async () => {
     width: "100%",
   }}
 >
-  Supports DOCX and PDF • Max file size 5MB
+ Supports DOCX upload • PDF export available • Max file size 5MB
 </div>
                 </div>
               </div>

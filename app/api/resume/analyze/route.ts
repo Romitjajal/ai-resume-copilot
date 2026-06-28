@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import mammoth from "mammoth";
 import { prisma } from "@/lib/prisma";
 import { getTokenFromRequest, verifyToken } from "@/lib/auth";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import "pdfjs-dist/legacy/build/pdf.worker.mjs";
+
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
@@ -107,36 +106,14 @@ export async function POST(req: Request) {
 
     let resumeText = "";
 
- if (file.name.toLowerCase().endsWith(".docx")) {
+if (file.name.toLowerCase().endsWith(".docx")) {
   const result = await mammoth.extractRawText({ buffer });
   resumeText = result.value.trim();
-} else if (file.name.toLowerCase().endsWith(".pdf")) {
-  try {
-   resumeText = await extractTextFromPdf(buffer);
-resumeText = fixPdfExtractedText(resumeText);
-  } catch (err) {
-    console.error("PDF Parse Error:", err);
-
-    return NextResponse.json(
-      {
-        error: "Unable to read this PDF. Please upload another PDF or DOCX.",
-      },
-      { status: 400 }
-    );
-  }
-
-  if (!resumeText.trim()) {
-    return NextResponse.json(
-      {
-        error:
-          "This PDF contains no selectable text. It may be be scanned or image-based.",
-      },
-      { status: 400 }
-    );
-  }
 } else {
   return NextResponse.json(
-    { error: "Only DOCX and PDF files are supported right now" },
+    {
+      error: "Only DOCX files are supported for upload right now.",
+    },
     { status: 400 }
   );
 }
@@ -744,38 +721,4 @@ function buildSuggestions(
 
   return suggestions.slice(0, 6);
 }
-async function extractTextFromPdf(buffer: Buffer): Promise<string> {
-  const pdf = await getDocument({
-    data: new Uint8Array(buffer),
-    useWorkerFetch: false,
-    disableAutoFetch: true,
-    disableStream: true,
-  } as any).promise;
 
-  const pages: string[] = [];
-
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const content = await page.getTextContent();
-
-    const pageText = content.items
-      .map((item: any) => ("str" in item ? item.str : ""))
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    if (pageText) pages.push(pageText);
-  }
-
-  return pages.join("\n\n").trim();
-}
-function fixPdfExtractedText(text: string) {
-  return text
-    .replace(/\bSUMMARY\b/gi, "\nSUMMARY\n")
-    .replace(/\bSKILLS\b/gi, "\nSKILLS\n")
-    .replace(/\bEXPERIENCE\b/gi, "\nEXPERIENCE\n")
-    .replace(/\bPROJECTS\b/gi, "\nPROJECTS\n")
-    .replace(/\bEDUCATION\b/gi, "\nEDUCATION\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
